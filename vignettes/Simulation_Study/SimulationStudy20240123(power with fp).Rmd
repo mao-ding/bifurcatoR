@@ -1,0 +1,504 @@
+---
+title: "Simulation Study"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, error = FALSE)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(plotly)
+library(data.table)
+```
+
+```{r, include = FALSE} 
+## Power with FP (Point Size up to FP Size) ###
+# plot_pwr_fp = function(dist,p,df){
+#   ggplot2::ggplot(df[df$Prop==p & df$Distribution == dist,], aes(SampleSize, power,
+#                                                                  group = interaction(Test, Distribution),
+#                                                                  color = Test, size = FP)) +
+#   geom_point(position = position_dodge2(width = .5)) +
+#   geom_line(linewidth=0.4,position = position_dodge2(width = .5)) +
+#   theme(legend.position = 'none') +
+#   facet_grid(delta_mu ~ sd_inflation,
+#              labeller = labeller(delta_mu = delta_mu_labels,
+#                                  sd_inflation = sd_inflation_labels),scales="free") +
+#   theme_classic2(16) +
+#   #scale_color_manual(values=unname(mypal))
+#   scale_size_continuous(breaks=c(0.01,0.05,0.1,0.5,1),range=c(3,0),limits=c(0.00001,1)) +
+#   ggtitle(paste0("Mixing Proportion =", p))+
+#   ylab("Power") + xlab("N") +
+#   scale_y_continuous(limits=c(0,1),breaks=seq(0,1,0.2)) +
+#   scale_x_continuous(breaks=c(0,20,50,100,200,400),trans="log2")+
+#   geom_hline(yintercept = 0.8, linetype=2,alpha=0.2)
+# 
+# }
+
+# plot_pwr_fp = function(dist, p, df) {
+#   ggplot2::ggplot(df[df$Prop == p & df$Distribution == dist, ], aes(SampleSize, power,
+#                                                                     group = interaction(Test, Distribution),
+#                                                                     color = Test, size = FP)) +
+#     geom_point(position = position_dodge2(width = 0.5)) +
+#     geom_line(size = 0.4, position = position_dodge2(width = 0.5)) +
+#     theme(legend.position = 'none') +
+#     facet_grid(delta_mu ~ sd_inflation,
+#                labeller = labeller(delta_mu = delta_mu_labels,
+#                                    sd_inflation = sd_inflation_labels), scales = "free") +
+#     theme_classic2(16) +
+#     scale_size_continuous(breaks = c(0.05, 0.1, 1),
+#                           labels = c("<0.05", "0.05-0.1", ">0.1"),
+#                           range = c(1, 10), limits = c(0.00001, 1),
+#                           guide = guide_legend(override.aes = list(size = c(5, 2, 0),
+#                                                                    linetype = c(0, 0, 1)))) +
+#     ggtitle(paste0("Mixing Proportion =", p)) +
+#     ylab("Power") + xlab("N") +
+#     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+#     scale_x_continuous(breaks = c(0, 20, 50, 100, 200, 400), trans = "log2") +
+#     geom_hline(yintercept = 0.8, linetype = 2, alpha = 0.2)
+# }
+
+plot_pwr_fp = function(dist,p,df){
+  ggplot2::ggplot(df[df$Prop==p & df$Distribution == dist,], aes(SampleSize, power,
+                                                                 group = interaction(Test, Distribution),
+                                                                 color = Test)) +
+    geom_point(aes(size = 3, shape = fp_range, color = Test)) +
+    geom_line() +
+    labs(colour = "Test", shape = "FP Range") + 
+    scale_shape_manual(values = c("<0.05" = 19, "<0.1" = 1, ">=0.1" = 20)) +
+    theme(legend.position = 'right') +
+    facet_grid(delta_mu ~ sd_inflation,
+               labeller = labeller(delta_mu = delta_mu_labels,
+                                   sd_inflation = sd_inflation_labels),scales="free") +
+    theme_classic2(16) +
+    scale_color_viridis_d(option = "turbo") +
+    ggtitle(paste0("Mixing Proportion =", p))+
+    ylab("Power") +
+    scale_size(guide="none") +
+    ylim(0,max(df$power)) +
+    scale_x_continuous(trans = "log2", breaks = c(20, 50, 100, 200, 400), labels = c(20, 50, 100, 200, 400))
+}
+
+
+# plot_pwr_fp_b = function(df){
+#   ggplot2::ggplot(df, aes(SampleSize, power, group = interaction(Test, Distribution), color = Test, size = FP)) +
+#     geom_point(position = position_dodge2(width = .5)) +
+#     geom_line(linewidth=0.4,position = position_dodge2(width = .5)) +
+#     theme(legend.position = 'none') +
+#     facet_grid(s2 ~ s1,
+#               labeller = labeller(s2 = s2_labels, s1 = s1_labels),scales="free") +
+#     theme_classic2(16) +
+#     scale_size_continuous(breaks=c(0.01,0.05,0.1,0.5,1),range=c(3,0),limits=c(0.00001,1)) +
+#     ylab("Power") + xlab("N") + 
+#     scale_y_continuous(limits=c(0,1),breaks=seq(0,1,0.2)) +
+#     scale_x_continuous(breaks=c(0,20,50,100,200,400),trans="log2") +
+#     geom_hline(yintercept = 0.8, linetype=2,alpha=0.2)
+# }
+
+plot_pwr_fp_b = function(df){
+  ggplot2::ggplot(df, aes(SampleSize, power, group = interaction(Test, Distribution), color = Test)) +
+    geom_point(aes(size = 3, shape = fp_range, color = Test)) +
+    geom_line() +
+    labs(colour = "Test", shape = "FP Range") + 
+    scale_shape_manual(values = c("<0.05" = 19, "<0.1" = 1, ">=0.1" = 20)) +
+    theme(legend.position = 'right') +
+    facet_grid(s2 ~ s1,
+              labeller = labeller(s2 = s2_labels, s1 = s1_labels),scales="free") +
+    theme_classic2(16) +
+    scale_color_viridis_d(option = "turbo") +
+    ylab("Power") +
+    scale_size(guide="none") +
+    ylim(0,max(df$power)) +
+    scale_x_continuous(trans = "log2", breaks = c(20, 50, 100, 200, 400), labels = c(20, 50, 100, 200, 400))
+}
+    
+
+```
+
+
+
+```{r, include = FALSE} 
+###### Density Plot ######
+
+### Module 1
+# Norm
+den_plot_n_mod_1 = function(p,df){
+  ggplot2::ggplot() +
+    ggplot2::geom_density(data = df[df$prop == p,], ggplot2::aes(x = value,color=Group)) +
+    ggplot2::facet_grid(delta_mu ~ sd_inflation,
+                        labeller = labeller(delta_mu = delta_mu_labels,
+                                            sd_inflation = sd_inflation_labels),scales="free") + 
+    ggplot2::theme_classic(14) +
+    ggplot2::ylab("Population Density") +
+    ggplot2::xlab("Values") +
+    ggplot2::theme(legend.text = ggplot2::element_text(10)) +
+    ggplot2::ggtitle(paste0("Mixing Proportion = ",p)) +
+    # scale_color_viridis_d() +
+    #scale_color_manual(values=c("black","red")) 
+    theme(plot.title = element_text(hjust = 0))
+}
+
+# Weib
+den_plot_w_mod_1 = function(p,df){
+  ggplot2::ggplot() +
+    ggplot2::geom_density(data = df[df$prop == p,], ggplot2::aes(x = value,color=Group)) +
+    ggplot2::facet_grid(delta_mu ~ sd_inflation,
+                        labeller = labeller(delta_mu = delta_mu_labels,
+                                            sd_inflation = sd_inflation_labels),scales="free") + 
+    ggplot2::theme_classic(14) +
+    ggplot2::ylab("Population Density") +
+    ggplot2::xlab("Values") +
+    ggplot2::coord_cartesian(xlim = c(quantile(df[df$prop == p,]$value, probs = 0.01), quantile(df[df$prop == p,]$value, probs = 0.99))) +
+    ggplot2::theme(legend.text = ggplot2::element_text(10)) +
+    ggplot2::ggtitle(paste0("Mixing Proportion = ",p)) +
+    # scale_color_viridis_d() +
+    #scale_color_manual(values=c("black","red")) 
+    theme(plot.title = element_text(hjust = 0))
+}
+
+### Module 2
+# Norm 
+den_plot_n_mod_2 = function(df, p){
+  ggplot2::ggplot() +
+    ggplot2::geom_density(data = df[df$prop == p,], ggplot2::aes(x = value))+
+    ggplot2::facet_grid(delta_mu ~ sd_inflation,
+                        labeller = labeller(delta_mu = delta_mu_labels,
+                                            sd_inflation = sd_inflation_labels),scales="free")+
+    ggplot2::theme_classic(14) +
+    ggplot2::ylab("Population Density") +
+    ggplot2::xlab("Values") +
+    ggplot2::theme(legend.text = ggplot2::element_text(10)) +
+    ggplot2::ggtitle(paste0("Mixing Proportion = ",p)) +
+    scale_color_viridis_d() +
+    theme(plot.title = element_text(hjust = 0))
+} 
+
+# Weib
+den_plot_w_mod_2 = function(df, p){
+  ggplot2::ggplot() +
+    ggplot2::geom_density(data = df[df$prop == p,], ggplot2::aes(x = value))+
+    ggplot2::facet_grid(delta_mu ~ sd_inflation,
+                        labeller = labeller(delta_mu = delta_mu_labels,
+                                            sd_inflation = sd_inflation_labels),scales="free")+
+    ggplot2::theme_classic(14) +
+    ggplot2::ylab("Population Density") +
+    ggplot2::xlab("Values") + 
+    ggplot2::coord_cartesian(xlim = c(quantile(df[df$prop == p,]$value, probs = 0.01), quantile(df[df$prop == p,]$value, probs = 0.99))) +
+    ggplot2::theme(legend.text = ggplot2::element_text(10)) +
+    ggplot2::ggtitle(paste0("Mixing Proportion = ",p)) +
+    scale_color_viridis_d() +
+    theme(plot.title = element_text(hjust = 0))
+} 
+
+
+# beta
+den_plot_beta_mod_2 = function(df){
+    ggplot2::ggplot() +
+      ggplot2::geom_density(data = df, ggplot2::aes(x = value))+
+      ggplot2::facet_grid(s2 ~ s1,
+                          labeller = labeller(s2 = s2_labels, s1 = s1_labels),scales="free")+
+      ggplot2::theme_classic(14) +
+      ggplot2::ylab("Population Density") +
+      ggplot2::xlab("Values") +
+      ggplot2::theme(legend.text = ggplot2::element_text(10)) +
+      #ggplot2::ggtitle(paste0("Mixing Proportion = ",p)) +
+      scale_color_viridis_d() +
+      theme(plot.title = element_text(hjust = 0))
+}
+```
+
+# Module {.tabset}
+## Module 1 (simulations = 5000) {.tabset}
+```{r, include = FALSE}
+mod_1_nw_res <- as.data.frame(readRDS('~/Nadeau/module1_n_w_all_tests_sim(5000)_new.rds'))
+
+mod_1_nw_res$delta_mu = round(mod_1_nw_res$mu2 - mod_1_nw_res$mu1,2)
+mod_1_nw_res$sd_inflation = round(mod_1_nw_res$sd2/mod_1_nw_res$sd1, 2)
+
+
+mod_1_nw_res = mod_1_nw_res %>%
+  mutate(fp_range = case_when(
+    FP < 0.05 ~ "<0.05",
+    FP >= 0.05 & FP < 0.1 ~ "<0.1",
+    TRUE ~ ">=0.1"
+  ))
+
+mod_1_nw_res$fp_range = factor(mod_1_nw_res$fp_range, levels = c("<0.05", "<0.1", ">=0.1"))
+
+delta_mu_labels <- paste0('Delta mu = ', unique(mod_1_nw_res$delta_mu))
+names(delta_mu_labels) <- unique(mod_1_nw_res$delta_mu)
+
+sd_inflation_labels <- paste0('SD Inflation ', unique(mod_1_nw_res$sd_inflation),"x")
+names(sd_inflation_labels) <- unique(mod_1_nw_res$sd_inflation)
+```
+
+
+### Normal Distribution {.tabset}
+
+#### Variance {.tabset}
+
+##### Power with False Positive
+```{r , fig.height=12, fig.width=12, unit='in'}
+for(i in unique(mod_1_nw_res$Prop)){
+  print(plot_pwr_fp(dist="norm",p= i, mod_1_nw_res[mod_1_nw_res$Test %in% c("Levene","Permutations (MAD)", "Permutations (SD)" , "Permutations (Gini)"),]))
+}
+
+```
+
+#### Means {.tabset}
+
+##### Power with False Positive
+```{r , fig.height=12, fig.width=12, unit='in'}
+
+for(i in unique(mod_1_nw_res$Prop)){
+  print(plot_pwr_fp(dist="norm",p= i,mod_1_nw_res[mod_1_nw_res$Test %in% c("ANOVA","Non-Parametric ANOVA","Permutations (Raw)"),]))
+}
+
+```
+
+#### Density Plot {.tabset}
+```{r , fig.height=12, fig.width=12, unit='in'}
+params_grid <- rbind(
+  expand.grid(
+    Distribution = c("norm"),
+    Alpha = .05,
+    Sim = 1,
+    nboot = 100,
+    SampleSize = 5000,
+    Prop = c(0.25, 0.5, 0.75),
+    mu1 = 0,
+    sd1 = 1,
+    mu2 = c(0, 2, 4),
+    sd2 = c(1, 2, 4)),
+  expand.grid(
+    Distribution = c("weib"),
+    Alpha = .05,
+    Sim = 1,
+    nboot = 100,
+    SampleSize = 5000,
+    Prop = c(0.25, 0.5, 0.75),
+    mu1 = 1,
+    sd1 = 1,
+    mu2 = c(1,3,5),
+    sd2 = c(1,2,4))
+)
+
+df_params = data.frame(
+  dist = params_grid$Distribution,
+  sample_size = params_grid$SampleSize,
+  prop = params_grid$Prop,
+  mu1 = params_grid$mu1,
+  mu2 = params_grid$mu2,
+  sd1 = params_grid$sd1,
+  sd2 = params_grid$sd2,
+  delta_mu = params_grid$mu2 - params_grid$mu1,
+  sd_inflation = params_grid$sd2/params_grid$sd1
+)
+
+delta_mu_labels <- paste0('Delta mu = ', unique(df_params$delta_mu))
+names(delta_mu_labels) <- unique(df_params$delta_mu)
+
+sd_inflation_labels <- paste0('SD Inflation ', unique(df_params$sd_inflation),"x")
+names(sd_inflation_labels) <- unique(df_params$sd_inflation)
+
+
+df_norm = df_params[df_params$dist == "norm",]
+data_norm_mod_1 = rbindlist(lapply(seq_len(nrow(df_norm)),
+                                   \(i) with(df_norm[i,],
+                                             data.frame(df_norm[i,],
+                                                        value = c(rnorm(floor(prop*sample_size), mu1, sd1), rnorm(sample_size - floor(prop*sample_size), mu2, sd2)),
+                                                        Group = c(rep("Genotype 1",round(sample_size*prop,0)),rep("Genotype 2",round(sample_size*(1-prop),0)))))))
+
+for(prop in unique(data_norm_mod_1$prop)){
+  print(den_plot_n_mod_1(prop,data_norm_mod_1))
+}
+```
+
+### Weibull Distribution {.tabset}
+
+#### Variance {.tabset}
+
+##### Power with False Positive
+```{r , fig.height=12, fig.width=12, unit='in'}
+
+for(i in unique(mod_1_nw_res$Prop)){
+  print(plot_pwr_fp(dist="weib", p= i, mod_1_nw_res[mod_1_nw_res$Test %in% c("Levene","Permutations (MAD)", "Permutations (SD)" , "Permutations (Gini)"),]))
+}
+```
+
+#### Means {.tabset}
+
+##### Power with False Positive
+```{r , fig.height=12, fig.width=12, unit='in'}
+
+for(i in unique(mod_1_nw_res$Prop)){
+  print(plot_pwr_fp(dist="weib", p= i, mod_1_nw_res[mod_1_nw_res$Test %in% c("ANOVA","Non-Parametric ANOVA","Permutations (Raw)"),]))
+}
+
+```
+
+#### Density Plot {.tabset}
+```{r, fig.height=12, fig.width=12, unit='in'}
+df_weib = df_params[df_params$dist == "weib",]
+
+df_weib$shape1 = mixdist::weibullpar(df_weib$mu1,df_weib$sd1, loc = 0)$shape
+df_weib$scale1 = mixdist::weibullpar(df_weib$mu1,df_weib$sd1, loc = 0)$scale
+df_weib$shape2 = mixdist::weibullpar(df_weib$mu2,df_weib$sd2, loc = 0)$shape
+df_weib$scale2 = mixdist::weibullpar(df_weib$mu2,df_weib$sd2, loc = 0)$scale
+
+
+data_weib_mod_1 = rbindlist(lapply(seq_len(nrow(df_weib)),
+                                   \(i) with(df_weib[i,],
+                                             data.frame(df_weib[i,],
+                                                        value = c(rweibull(floor(prop*sample_size), scale = scale1, shape = shape1), rweibull(sample_size - floor(prop*sample_size), scale = scale2, shape = shape2)),
+                                                        Group = c(rep("Genotype 1",round(sample_size*prop,0)),rep("Genotype 2",round(sample_size*(1-prop),0)))))))
+
+for (prop in unique(data_weib_mod_1$prop)){
+  print(den_plot_w_mod_1(prop, data_weib_mod_1))
+}
+```
+
+
+## Module 2 (simulations = 1000) {.tabset}
+```{r, fig.height=12, fig.width=12, unit='in'}
+
+mod_2_nw_res <- as.data.frame(readRDS( "~/Nadeau/module2_n_w_9_tests_sim(1000).rds"))
+
+mod_2_nw_res$delta_mu = round(mod_2_nw_res$mu2 - mod_2_nw_res$mu1,2)
+mod_2_nw_res$sd_inflation = round(mod_2_nw_res$sd2/mod_2_nw_res$sd1, 2)
+
+mod_2_nw_res = mod_2_nw_res %>%
+  mutate(fp_range = case_when(
+    FP < 0.05 ~ "<0.05",
+    FP >= 0.05 & FP < 0.1 ~ "<0.1",
+    TRUE ~ ">=0.1"
+  ))
+
+mod_2_nw_res$fp_range = factor(mod_2_nw_res$fp_range, levels = c("<0.05", "<0.1", ">=0.1"))
+
+delta_mu_labels <- paste0('Delta mu = ', unique(mod_2_nw_res$delta_mu))
+names(delta_mu_labels) <- unique(mod_2_nw_res$delta_mu)
+
+sd_inflation_labels <- paste0('SD Inflation ', unique(mod_2_nw_res$sd_inflation),"x")
+names(sd_inflation_labels) <- unique(mod_2_nw_res$sd_inflation)
+
+```
+
+### Normal Distribution {.tabset}
+#### Power with False Positive
+```{r , fig.height=12, fig.width=12, unit='in'}
+
+for(i in unique(mod_2_nw_res$Prop)){
+  print(plot_pwr_fp(dist="norm",p= i,mod_2_nw_res))
+}
+```
+
+#### Density Plot
+```{r , fig.height=12, fig.width=12, unit='in'}
+data_norm_mod_2 = rbindlist(lapply(seq_len(nrow(df_norm)),
+                                   \(i) with(df_norm[i,],
+                                             data.frame(df_norm[i,],
+                                                        value = c(rnorm(floor(prop*sample_size), mu1, sd1), rnorm(sample_size - floor(prop*sample_size), mu2, sd2))))))
+for (prop in unique(data_norm_mod_2$prop)){
+  print(den_plot_n_mod_2(data_norm_mod_2, prop))
+}
+```
+
+### Weibull Distribution {.tabset}
+
+#### Power with False Positive
+
+```{r , fig.height=12, fig.width=12, unit='in'}
+
+for(i in unique(mod_2_nw_res$Prop)){
+  print(plot_pwr_fp(dist="weib",p= i,mod_2_nw_res))
+}
+```
+
+#### Density Plot
+```{r , fig.height=12, fig.width=12, unit='in'}
+data_weib_mod_2 = rbindlist(lapply(seq_len(nrow(df_weib)),
+                                   \(i) with(df_weib[i,],
+                                             data.frame(df_weib[i,],
+                                                        value = c(rweibull(floor(prop*sample_size), scale = scale1, shape = shape1), rweibull(sample_size - floor(prop*sample_size), scale = scale2, shape = shape2))))))
+
+for (prop in unique(data_weib_mod_2$prop)){
+  print(den_plot_w_mod_2(data_weib_mod_2, prop))
+}
+```
+
+### Beta Distribution {.tabset}
+
+```{r , include = FALSE}
+mod_2_beta_res <- as.data.frame(readRDS( "~/Nadeau/module2_b_all_tests_sim(1000).rds"))
+
+
+mod_2_beta_res = mod_2_beta_res %>%
+  mutate(fp_range = case_when(
+    FP < 0.05 ~ "<0.05",
+    FP >= 0.05 & FP < 0.1 ~ "<0.1",
+    TRUE ~ ">=0.1"
+  ))
+
+mod_2_beta_res$fp_range = factor(mod_2_beta_res$fp_range, levels = c("<0.05", "<0.1", ">=0.1"))
+
+
+s1_labels <- paste0('s1 = ', unique(mod_2_beta_res$s1))
+names(s1_labels) <- unique(mod_2_beta_res$s1)
+
+s2_labels <- paste0('s2 = ', unique(mod_2_beta_res$s2))
+names(s2_labels) <- unique(mod_2_beta_res$s2)
+
+```
+
+#### Power with False Positive
+```{r , fig.height=12, fig.width=12, unit='in'}
+plot_pwr_fp_b(mod_2_beta_res)
+```
+
+#### Density Plot
+```{r , fig.height=12, fig.width=12, unit='in'}
+params_grid <- expand.grid(
+  Distribution = c("beta"),
+  Alpha = .05,
+  Sim = 1,
+  nboot = 100,
+  SampleSize = 5000,
+  Prop = c(0.1, 0.25, 0.5,.75,.9),
+  s1 = c(0.25,0.5),
+  s2 = c(0.5,.75)
+)
+
+df_beta = data.frame(
+  dist = params_grid$Distribution,
+  sample_size = params_grid$SampleSize,
+  prop = params_grid$Prop,
+  s1 = params_grid$s1,
+  s2 = params_grid$s2
+)
+
+data_beta = rbindlist(lapply(seq_len(nrow(df_beta)),
+                             \(i) with(df_beta[i,],
+                                       data.frame(df_beta[i,],
+                                                  value = c(rbeta(sample_size, shape1 = s1, shape2 = s2))))))
+
+s1_labels <- paste0('s1 = ', unique(df_beta$s1))
+names(s1_labels) <- unique(df_beta$s1)
+
+s2_labels <- paste0('s2 = ', unique(df_beta$s2))
+names(s2_labels) <- unique(df_beta$s2)
+
+print(den_plot_beta_mod_2(data_beta))
+```
+
+### Lognormal Distribution {.tabset}
+#### Power with False Positive
+```{r , fig.height=12, fig.width=12, unit='in'}
+
+for(i in unique(mod_2_nw_res$Prop)){
+  print(plot_pwr_fp(dist="LNnorm",p= i,mod_2_nw_res))
+}
+```
