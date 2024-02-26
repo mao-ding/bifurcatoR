@@ -1,0 +1,690 @@
+---
+title: "dxsmall_analysis"
+author: "Mao Ding"
+date: "2023-06-24"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE,message = FALSE,error = FALSE)
+```
+## Objective
+Perform real world data analysis using BifurcatoR tools to check bimodality
+```{r include = FALSE}
+#devtools::install_github("VanAndelInstitute/bifurcatoR",force=T)
+
+suppressPackageStartupMessages({
+  library(bifurcatoR)
+  library(doParallel)
+  library(dplyr)
+  library(ggplot2)
+  library(plotly)
+  library(ggpubr)
+  library(data.table)
+  library(parallel)
+  library(mclust)
+  library(gtsummary)
+  library(tidyverse)
+  library(gt)
+  library(mixR)
+})
+
+```
+
+
+```{r, include=FALSE}
+data(dxsmall)
+```
+### dxsmall data: pediatric leukemia gene expression values with different fusion groups
+```{r, include=TRUE}
+show(dxsmall)
+```
+#### Cohort Characteristics
+```{r, include=TRUE}
+df = data.frame(colData(dxsmall))
+df$Sex = replace(df$Sex, df$Sex == "Unknown", NA)
+
+tbl <- 
+  df %>% tbl_summary(type = list(c(AgeGroup, Sex, FAB, fusion, OSI) ~ "categorical",
+                               c(BlastPercent, OS) ~ "continuous"),
+                   by = FusionGroup,
+                   statistic = list(
+                     all_continuous() ~ "{mean} ({sd})",
+                     all_categorical() ~ "{n} ({p}%)"),
+                   digits = all_continuous() ~ 2,
+                   label = fusion ~ "Fusion",
+                   missing_text = "(Missing)"
+                   ) %>%
+                   modify_table_styling(
+                     columns = label,
+                     rows = label == "AYA",
+                     footnote = "Adolescent and Young Adult") %>%
+                   bold_labels() %>%
+                   modify_spanning_header(all_stat_cols() ~ "**Fusion Group**") %>%
+                   modify_caption("**Table 1. dxsmall Patient Characteristics** (N= {N})") %>%
+                   modify_header(label = "**Variable**")
+
+tbl_highlighted <- 
+  as_gt(tbl) %>%
+  gt::tab_style(style = list(cell_fill(color = "lightgrey")),
+            locations = list(cells_column_labels(),cells_column_spanners())) 
+# Target the locations: https://search.r-project.org/CRAN/refmans/gt/html/cells_column_labels.html
+
+
+print(tbl_highlighted)
+
+
+```
+
+```{r, include = TRUE}
+tbl_highlighted |> gt::gtsave(filename = "/work/larylab/Mao_Ding/bifurcatoR/vignettes/dxsmall/results/dxsmall_Table_1.docx")
+```
+
+#### First 10 columns of counts
+```{r, include=TRUE}
+head(assays(dxsmall)$counts[,1:10],10)
+```
+#### Summary Statistics of dxsmall counts
+```{r, include=TRUE}
+summary(t(dxsmall@assays@data@listData$counts))
+```
+#### First 10 columns of logcounts
+```{r, include=TRUE}
+head(assays(dxsmall)$logcounts[,1:10],10)
+```
+#### Summary Statistics of dxsmall logcounts
+```{r, include=TRUE}
+summary(t(dxsmall@assays@data@listData$logcounts))
+```
+
+```{r, include=TRUE}
+#rownames(dxsmall)
+```
+
+#### rowData: Rows contains their own metadata as a dataframe format to describe their features.
+```{r, include=TRUE}
+rowData(dxsmall)
+```
+
+```{r, include=TRUE}
+#head(colnames(dxsmall),20)
+```
+
+#### colData: Columns contains their own metadata as a dataframe format to describe their features.
+```{r, include=TRUE}
+colData(dxsmall)
+```
+
+#### Age Group
+```{r, fig.width = 6, fig.height = 8, unit='in', include=TRUE}
+t_age = table(dxsmall$AgeGroup)
+plot_ly(
+  x = names(t_age),
+  y = as.numeric(t_age), type = "bar", marker = list(color = c("orange"))) %>%
+  layout(xaxis = list(title = "Age",
+                      zeroline = FALSE),
+         yaxis = list(title = "Frequency",
+                      zeroline = FALSE))
+
+```
+#### Gender
+```{r, fig.height=6, fig.width=8, unit='in'}
+t_gender = table(dxsmall$Sex)
+plot_ly(
+  x = names(t_gender),
+  y = as.numeric(t_gender), type = "bar") %>%
+  layout(xaxis = list(title = "Gender",
+                      zeroline = FALSE),
+         yaxis = list(title = "Frequency",
+                      zeroline = FALSE))
+```
+#### Fusion Group
+```{r, fig.height=8, fig.width=10, unit='in', include=TRUE}
+t_fusiongroup = table(dxsmall$FusionGroup)
+plot_ly(
+  x = names(t_fusiongroup),
+  y = as.numeric(t_fusiongroup), type = "bar", marker = list(color = c("lightgreen"))) %>%
+  layout(xaxis = list(title = "Fusion Group",
+                      zeroline = FALSE,
+                      titlefont = list(size = 25)),
+         yaxis = list(title = "Frequency",
+                      zeroline = FALSE,
+                       titlefont = list(size = 25)),
+         font = list(size = 18))
+```
+#### Density Plot of MECOM logcounts in different fusion group
+```{r, fig.height=8, fig.width=10, unit='in', include = TRUE}
+
+logcount_mll = logcounts(dxsmall)["MECOM", dxsmall$FusionGroup == "MLL"]
+logcount_nsd1 = logcounts(dxsmall)["MECOM", dxsmall$FusionGroup == "NSD1"]
+
+df <- data.frame(
+  Fusion_Group = c(rep("MLL", length(logcount_mll)), rep("NSD1", length(logcount_nsd1))),
+  logcounts = c(logcount_mll, logcount_nsd1)
+)
+
+ggplotly(ggplot(df, aes(x = logcounts, fill = Fusion_Group)) +
+           geom_histogram(aes(y = ..density..), position = "identity", alpha = 0.5, bins = 30) +
+           geom_density(alpha = 0.5) +
+           scale_fill_manual(values = c(2,3)) +  
+           theme_minimal () +
+           theme(text = element_text(size = 19)) +
+           ylab("Density") +
+           xlab("MECOM Logcounts"))
+
+```
+
+### Mclust fit: fitting the dataset using a mixture model based on the hypothesis that two clusters exist by specifying group number equals 2.
+```{r, include = FALSE}
+fit_1 = Mclust(logcount_mll, G = 2)
+
+```
+
+
+#### mclust fit object density plot in MLL
+```{r, include = TRUE}
+mb_fit_1 = mclust::mclustBootstrapLRT(logcount_mll, verbose=F, maxG = 1, modelName="E")
+
+```
+
+
+```{r, include = TRUE}
+fit_1_mu1 = round(fit_1$parameters$mean[1],2)
+fit_1_sd1 = round((sqrt(fit_1$parameters$variance$sigmasq))[1],2)
+fit_1_mu2 = round(fit_1$parameters$mean[2],2)
+fit_1_sd2 = round((sqrt(fit_1$parameters$variance$sigmasq))[2],2)
+fit_1_prop = round((table(fit_1$classification)/sum(dxsmall$FusionGroup == "MLL"))[1],2)
+print(paste0("Mean of the two clusters in MLL are: ",fit_1_mu1,"  ", fit_1_mu2))
+print(paste0("SD of the two clusters in MLL are: ",fit_1_sd1,"  ", fit_1_sd2))
+print(paste0("Mixing proportion of the two clusters in MLL are: ", fit_1_prop,"  ", 1-fit_1_prop))
+print(paste0("The p-value of bimodality in MLL is: ", mb_fit_1$p.value))
+```
+```{r, fig.height=8, fig.width=10, unit='in', include = TRUE}
+
+plot(fit_1, what="density", xlab = "MECOM Logcounts in MLL", cex.lab = 1.5)
+legend_labels <- c(paste0("mu1 = ",fit_1_mu1,"," ," sd1 = ",fit_1_sd1,","," p1 = ",fit_1_prop), 
+                   paste0("mu2 = ",fit_1_mu2,"," ," sd2 = ",fit_1_sd2,","," p2 = ",1-fit_1_prop),
+                   paste0("p-value = ", mb_fit_1$p.value))
+
+legend("topright", legend = legend_labels, col = c("white","white"), lty= "blank", pch = "", lwd = 0, cex = 1.2, bty = "n")
+
+```
+
+##### Classification for each cell in MLL
+```{r, include = TRUE}
+head(fit_1$classification,20)
+```
+
+##### Uncertainty for each cell in MLL
+```{r, include = TRUE}
+head(fit_1$uncertainty,20)
+```
+##### Ameijeiras-Alonso et al. Excess Mass Fit
+```{r, include = TRUE}
+acr_fit_1 = multimode::modetest(logcount_mll,mod0 = 1,method = "ACR", B = 1000)
+acr_fit_1$p.value
+```
+##### Bimodality Coefficient
+```{r, include = TRUE}
+library(mousetrap)
+bc_fit_1 = mousetrap::mt_check_bimodality(as.data.frame(logcount_mll),method = "BC")
+bc_fit_1$BC > 0.555
+```
+##### Cheng and Hall Excess Mass
+```{r, include = TRUE}
+ch_fit_1 = multimode::modetest(logcount_mll,mod0 = 1,method = "CH",B = 1000)
+ch_fit_1$p.value
+```
+##### Fisher and Marron Carmer-von Mises
+```{r, include = TRUE}
+fm_fit_1 = multimode::modetest(logcount_mll,mod0 = 1,method = "FM",B = 1000)
+fm_fit_1$p.value
+```
+##### Hall and York Bandwidth test
+```{r, include = TRUE}
+hy_fit_1 = multimode::modetest(logcount_mll,mod0 = 1,method = "HY",B = 1000)
+hy_fit_1$p.value
+```
+
+##### Hartigans' dip test
+```{r, include = TRUE}
+dip_fit_1 = multimode::modetest(logcount_mll,mod0 = 1,method = "HH",B = 1000)
+dip_fit_1$p.value
+```
+
+##### Sliverman Bandwidth
+```{r, include = TRUE}
+sb_fit_1 = multimode::modetest(logcount_mll,mod0 = 1,method = "SI",B = 1000)
+sb_fit_1$p.value
+```
+
+##### mixR
+```{r, fig.height=8, fig.width=10, unit='in', include = TRUE}
+mixr_fit_1 = mixfit(logcount_mll, ncomp = 2)
+par(cex.lab = 2, cex.axis = 2, cex.main = 2)
+p1 = plot(mixr_fit_1, what="density", title = 'MLL Gaussian Mixture (2 components)', cex.main = 20)
+p1
+p_value_mll = bs.test(logcount_mll, ncomp = c(1,2))$pvalue
+print(paste0("The bimodality p-value of MLL is: ", p_value_mll))
+```
+
+#### mclust fit object density plot in NSD1
+
+```{r, include = FALSE}
+fit_2 = Mclust(logcount_nsd1, G = 2)
+mb_fit_2 = mclust::mclustBootstrapLRT(logcount_nsd1, verbose=F, maxG = 1, modelName="E")
+```
+
+```{r, include = TRUE}
+fit_2_mu1 = round(fit_2$parameters$mean[1],2)
+fit_2_sd1 = round((sqrt(fit_2$parameters$variance$sigmasq))[1],2)
+fit_2_mu2 = round(fit_2$parameters$mean[2],2)
+fit_2_sd2 = round((sqrt(fit_2$parameters$variance$sigmasq))[1],2) # only one sd for fit_2, so set sd2 as same as sd1
+fit_2_prop = round((table(fit_2$classification)/sum(dxsmall$FusionGroup == "NSD1"))[1],2)
+print(paste0("Mean of the two clusters in NSD1 are: ",fit_2_mu1,"  ", fit_2_mu2))
+print(paste0("SD of the two clusters in NSD1 are: ",fit_2_sd1,"  ", fit_2_sd2))
+print(paste0("Mixing proportion of the two clusters in NSD1 are: ",fit_2_prop,"  ", 1-fit_2_prop))
+print(paste0("The p-value of bimodality in NSD1 is: ", mb_fit_2$p.value))
+```
+
+```{r, fig.height=8, fig.width=10, unit='in', include = TRUE}
+#### mclust fit object density plot in NSD1
+
+plot(fit_2, what="density", xlab = "MECOM Logcounts in NSD1", cex.lab = 1.5)
+
+legend_labels <- c(paste0("mu1 = ",fit_2_mu1,"," ," sd1 = ",fit_2_sd1,","," p1 = ",fit_2_prop), 
+                   paste0("mu2 = ",fit_2_mu2,"," ," sd2 = ",fit_2_sd2,","," p2 = ",1-fit_2_prop),
+                   paste0("p-value = ", mb_fit_2$p.value))
+
+legend("topright", legend = legend_labels, col = c("white","white"), lty= "blank", pch = "", lwd = 0, cex = 1.2, bty = "n")
+
+```
+
+
+```{r, include = TRUE}
+##### Classification for Each cell in NSD1
+head(fit_2$classification, 20)
+```
+
+##### Uncertainty for each cell in NSD1
+```{r, include = TRUE}
+head(fit_2$uncertainty,20)
+```
+##### Ameijeiras-Alonso et al. Excess Mass Fit
+```{r, include = TRUE}
+acr_fit_2 = multimode::modetest(logcount_nsd1,mod0 = 1,method = "ACR", B = 1000)
+acr_fit_2$p.value
+```
+##### Bimodality Coefficient
+```{r, include = TRUE}
+bc_fit_2 = mousetrap::mt_check_bimodality(as.data.frame(logcount_nsd1),method = "BC")
+bc_fit_2$BC > 0.555
+```
+##### Cheng and Hall Excess Mass
+```{r, include = TRUE}
+ch_fit_2 = multimode::modetest(logcount_nsd1,mod0 = 1,method = "CH",B = 1000)
+ch_fit_2$p.value
+```
+##### Fisher and Marron Carmer-von Mises
+```{r, include = TRUE}
+fm_fit_2 = multimode::modetest(logcount_nsd1,mod0 = 1,method = "FM",B = 1000)
+fm_fit_2$p.value
+```
+##### Hall and York Bandwidth test
+```{r, include = TRUE}
+hy_fit_2 = multimode::modetest(logcount_nsd1,mod0 = 1,method = "HY",B = 1000)
+hy_fit_2$p.value
+```
+
+##### Hartigans' dip test
+```{r, include = TRUE}
+dip_fit_2 = multimode::modetest(logcount_nsd1,mod0 = 1,method = "HH",B = 1000)
+dip_fit_2$p.value
+```
+
+##### Sliverman Bandwidth
+```{r, include = TRUE}
+sb_fit_2 = multimode::modetest(logcount_nsd1,mod0 = 1,method = "SI",B = 1000)
+sb_fit_2$p.value
+```
+##### mixR
+```{r, fig.height=8, fig.width=10, unit='in', include = TRUE}
+logcount_nsd1_binned <- bin(logcount_nsd1, brks = seq(min(logcount_nsd1), max(logcount_nsd1), length = 30))
+mixr_fit_2 = mixfit(logcount_nsd1, ncomp = 2, ev = TRUE)
+p2 = plot(mixr_fit_2, title = 'NSD1 Gaussian Mixture (2 components)', xlim = c(0,6), ylim = c(0,1),cex.lab = 1.5)
+p2
+p_value_nsd1 = bs.test(logcount_nsd1, ncomp = c(1,2),ev = TRUE)$pvalue
+print(paste0("The bimodality p-value of NSD1 is: ", p_value_nsd1))
+```
+
+```{r, include=FALSE}
+total_cores <- round(parallel::detectCores()*.95)
+
+params_grid_1 <- rbind(expand.grid(
+  Distribution = c("norm"),
+  Fusion_Group = 'MLL',
+  Gene = 'MECOM',
+  Alpha = .05,
+  Sim = 1000,
+  nboot = 1000,
+  SampleSize = c(50, 100, 200, 300, 470),
+  Prop = fit_1_prop,
+  mu1 = fit_1_mu1,
+  sd1 = fit_1_sd1,
+  mu2 = fit_1_mu2,
+  sd2 = fit_1_mu2
+))
+
+params_grid_2 <- rbind(expand.grid(
+  Distribution = c("norm"),
+  Fusion_Group = 'NSD1',
+  Gene = 'MECOM',
+  Alpha = .05,
+  Sim = 1000,
+  nboot = 1000,
+  
+  SampleSize = c(50, 100, 200, 300, 470),
+  Prop = fit_2_prop,
+  mu1 = fit_2_mu1,
+  sd1 = fit_2_sd1,
+  mu2 = fit_2_mu2,
+  sd2 = fit_2_sd2 
+))
+
+params_grid = rbind(params_grid_1, params_grid_2)
+
+process_sims_w_n = function(row){  
+  
+  if(params_grid$Distribution[row] == "norm"){
+    params_list <- list(p = params_grid$Prop[row],
+                        mu1 = params_grid$mu1[row],
+                        sd1 = params_grid$sd1[row],
+                        mu2 = params_grid$mu2[row],
+                        sd2 = params_grid$sd2[row])
+    
+  } else if(params_grid$Distribution[row] == "weib"){
+    params_list <- list(p = params_grid$Prop[row],
+                        sp1 = mixdist::weibullpar(params_grid$mu1[row],params_grid$sd1[row], loc = 0)$shape,
+                        sc1 = mixdist::weibullpar(params_grid$mu1[row],params_grid$sd1[row], loc = 0)$scale,
+                        sp2 = mixdist::weibullpar(params_grid$mu2[row],params_grid$sd2[row], loc = 0)$shape,
+                        sc2 = mixdist::weibullpar(params_grid$mu2[row],params_grid$sd2[row], loc = 0)$scale)
+  }
+  output <- bifurcatoR::est_pow(
+    n = params_grid$SampleSize[row],
+    alpha = params_grid$Alpha[row],
+    nsim = params_grid$Sim[row],
+    dist = params_grid$Distribution[row],
+    params = params_list,
+    nboot = params_grid$nboot[row],
+    tests = c("dip", "mclust", "mt", "SI","HY","CH","ACR","FM")
+  )
+  return(cbind(params_grid[row, ], output))
+}
+
+```
+
+#### Parameters Grid
+```{r, include = TRUE}
+params_grid
+```
+
+```{r, include=FALSE}
+# start.time <- Sys.time()
+# results= rbindlist(mclapply(1:nrow(params_grid), function(x) process_sims_w_n(x),mc.cores=total_cores))
+# end.time <- Sys.time()
+# time.taken <- end.time - start.time
+# time.taken
+#saveRDS(results,"~/Nadeau/bifurcatorR_Mao_fork/bifurcatoR_Mao_fork/vignettes/module2_dxsmall_norm_all_tests.rds")
+```
+
+```{r, include=FALSE}
+results = readRDS("/work/larylab/Mao_Ding/bifurcatoR/vignettes/dxsmall/results/raw_results/module2_dxsmall_norm_all_tests.rds")
+
+names(results)[names(results) == "FP"] <- "FPR"
+
+results$delta_mu = round(results$mu2 - results$mu1,2)
+results$sd_inflation = round(results$sd2/results$sd1, 2)
+
+results$pwr_range = ifelse(results$power <= 0.4,"Low", ifelse(results$power <= 0.8, "Medium", "High"))
+results$pwr_range = factor(results$pwr_range, levels = c("High", "Medium", "Low"))
+
+results$fp_range = ifelse(results$FPR <= 0.05,"Preserved (0 <= FPR <= 0.05)", ifelse(results$FPR <= 0.1, "Slightly Inflated (0.05 < FPR <= 0.1)", "High (0.1 < FPR <= 1)"))
+results$fp_range = factor(results$fp_range, levels = c("High (0.1 < FPR <= 1)", "Slightly Inflated (0.05 < FPR <= 0.1)", "Preserved (0 <= FPR <= 0.05)"))
+
+delta_mu_labels <- paste0('Mean Difference = ', unique(results$delta_mu))
+names(delta_mu_labels) <- unique(results$delta_mu)
+
+sd_inflation_labels <- paste0('Standard Deviation Ratio = ', unique(results$sd_inflation)," : 1")
+names(sd_inflation_labels) <- unique(results$sd_inflation)
+```
+
+```{r, include = TRUE}
+results$Prop = round(results$Prop,2)
+```
+
+
+#### Power & False Positive
+```{r, include=TRUE}
+results
+```
+  
+```{r, include=FALSE}
+plot_pwr = function(dist,p,fg, df){
+    ggplotly(
+      ggplot(df[df$Prop==p & df$Distribution == dist & df$Fusion_Group == fg,], aes(SampleSize, power,
+                        group = interaction(Test, Distribution),
+                        color = Test)) +
+    geom_point() +
+    geom_line() + 
+    
+    theme(legend.position = 'none') +
+    facet_grid(delta_mu ~ sd_inflation,
+               labeller = labeller(delta_mu = delta_mu_labels,
+                                   sd_inflation = sd_inflation_labels))+
+    theme_classic2(14)+
+    scale_color_viridis_d(option = "H")+
+    ggtitle(paste0("Mixing Proportion = ", round(unique(results[results$Fusion_Group == fg,]$Prop),2)))+
+    ylab("Power") +
+    xlab("Sample Size") +
+    ylim(0,1)
+)
+}
+
+plot_fp = function(dist,p,fg,df){
+  
+ggplotly(
+  ggplot(df[df$Prop==p & df$Distribution == dist & df$Fusion_Group == fg,], aes(SampleSize, FPR,
+                        group = interaction( Test, Distribution),
+                        color = Test)) +
+    geom_point() +
+    geom_line() +
+    geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") +
+    scale_y_continuous(breaks = c(0,0.02,0.04,0.05,0.06,0.08,0.10), labels = c(0,0.02,0.04,0.05,0.06,0.08,0.10), limits = c(0,0.1)) +
+    theme(legend.position = 'none') +
+    facet_grid(delta_mu ~ sd_inflation,
+                labeller = labeller(delta_mu = delta_mu_labels,
+                                    sd_inflation = sd_inflation_labels)) +
+    theme_classic2(14) +
+    scale_color_viridis_d(option = "H") +
+    ggtitle(paste0("Mixing Proportion = ", round(unique(results[results$Fusion_Group == fg,]$Prop),2))) +
+    ylab("False Positive Rate")
+)
+}
+```
+
+```{r, include = FALSE} 
+### Power with FPR ###
+# set.seed(2023)
+# plot_pwr_fp = function(df,fg){
+#   ggplot((df[df$Fusion_Group == fg,]) %>% 
+#            mutate(x = jitter(SampleSize, factor = 2), y = jitter(power, factor = 0)), 
+#          aes(x = x, y = y, group = interaction(Test, Distribution), color = Test)) +
+#     geom_point(aes(size = 5, shape = fp_range, color = Test)) +
+#     geom_line() +
+#     labs(shape = "FP Range") +
+#     scale_shape_manual(values = c("Preserved (0 <= FP <= 0.05)" = 20, "Slightly Inflated (0.05 < FP <= 0.1)" = 9, "High (0.1 < FP <= 1)" = 2)) +
+#     theme(legend.position = 'right') +
+#     facet_grid(delta_mu ~ sd_inflation,
+#                labeller = labeller(delta_mu = delta_mu_labels,
+#                                    sd_inflation = sd_inflation_labels),scales="free") +
+#     theme_classic(14) +
+#     scale_color_viridis_d(option = "H") +
+#     scale_x_continuous(trans = "log2", breaks = c(50, 100, 200, 300, 400, 500), labels = c(50, 100, 200, 300, 400, 500)) +
+#     ggtitle(paste0("Mixing Proportion = ", round(unique((df[df$Fusion_Group == fg,])$Prop),2))) +
+#     xlab("Sample Size") +
+#     ylab("Power") +
+#     scale_size(guide = "none")
+# }
+
+```
+
+```{r, include = FALSE} 
+### Power with FP (Zach's style) ###
+set.seed(2023)
+plot_pwr_fp = function(df,fg){
+  ggplot2::ggplot((df[df$Fusion_Group == fg,]) %>% 
+           mutate(x = jitter(SampleSize, factor = 0), y = jitter(power, factor = 0)), 
+         aes(x = x, y = y, group = interaction(Test, Distribution), color = Test, size = FPR)) +
+    geom_point(position = position_dodge2(width = .5)) +
+    geom_line(linewidth=0.4,position = position_dodge2(width = .5)) +
+    theme(legend.position = 'none') +
+    facet_grid(delta_mu ~ sd_inflation,
+               labeller = labeller(delta_mu = delta_mu_labels,
+                                   sd_inflation = sd_inflation_labels),scales="free") +
+    theme_classic2(16)+
+    #theme(text = element_text(size = 16)) +
+    scale_color_viridis_d(option = "H")+
+    #scale_color_manual(values=unname(mypal)) +
+    scale_size_continuous(breaks=c(0.01,0.05,0.1,0.5,1),range=c(3,0),limits=c(0.00001,1)) +
+    ggtitle(paste0("Sampling Ratio = ", round(unique((df[df$Fusion_Group == fg,])$Prop),2) *100, ":", 
+                   100 - round(unique((df[df$Fusion_Group == fg,])$Prop),2)*100)) +
+    ylab("Power") + xlab("N") + 
+    scale_y_continuous(limits=c(0,1),breaks=seq(0,1,0.2)) +
+    scale_x_continuous(trans = "log2", breaks = c(50, 100, 200, 300, 400, 500), labels = c(50, 100, 200, 300, 400, 500)) +
+    geom_hline(yintercept = 0.8, linetype=2,alpha=0.2)
+    
+}
+
+```
+
+
+
+```{r, include=FALSE}
+### Power with FP (Interactive) ###
+set.seed(2023)
+plot_pwr_fp_inter = function(df,fg){
+  p = ggplotly(
+    ggplot((df[df$Fusion_Group == fg,]) %>%
+           mutate(x = jitter(SampleSize, factor = 2), y = jitter(power, factor = 0)),
+         aes(x = x, y = y, group = interaction(Test, Distribution), color = Test)) +
+    geom_point(aes(size = 5, shape = fp_range, color = Test)) +
+    geom_line() +
+    labs(shape = "FP Range") +
+    scale_shape_manual(values = c("Preserved (0 <= FP <= 0.05)" = 20, "Slightly Inflated (0.05 < FP <= 0.1)" = 9, "High (0.1 < FP <= 1)" = 2)) +
+    theme(legend.position = 'right') +
+    facet_grid(delta_mu ~ sd_inflation,
+               labeller = labeller(delta_mu = delta_mu_labels,
+                                   sd_inflation = sd_inflation_labels),scales="free") +
+    theme_classic(14) +
+    scale_color_viridis_d(option = "H") +
+    scale_x_continuous(trans = "log2", breaks = c(50, 100, 200, 300, 400, 500), labels = c(50, 100, 200, 300, 400, 500)) +
+    ggtitle(paste0("Mixing Proportion = ", round(unique((df[df$Fusion_Group == fg,])$Prop),2))) +
+    xlab("Log(Sample Size)") +
+    ylab("Power") +
+    scale_size(guide = "none"))
+
+
+    df= data.frame(id = seq_along(p$x$data), legend_entries = unlist(lapply(p$x$data, `[[`, "name")))
+  df$legend_group <- sapply(df$legend_entries, function(x) strsplit(gsub("^\\(|\\)$", "", x),",")[[1]][1])
+  df$is_first <- !duplicated(df$legend_group)
+
+  for (i in df$id) {
+    # Is the layer the first entry of the group?
+    is_first <- df$is_first[[i]]
+    # Assign the group identifier to the name and legendgroup arguments
+    p$x$data[[i]]$name <- df$legend_group[[i]]
+    p$x$data[[i]]$legendgroup <- p$x$data[[i]]$name
+    # Show the legend only for the first layer of the group
+    if (!is_first) p$x$data[[i]]$showlegend <- FALSE
+  }
+return (p)
+}
+```
+
+
+## Fusion Group = MLL{.tabset}
+### Power {.tabset}
+```{r ,fig.height=8, fig.width=10, unit='in'}
+plot_pwr(dist="norm",p = results$Prop, fg = "MLL", results)
+```
+
+### False Positive {.tabset}
+```{r ,fig.height=8, fig.width=10, unit='in'}
+plot_fp(dist="norm",p = results$Prop, fg = "MLL", results)
+```
+
+### Power with False Positive {.tabset}
+```{r ,fig.height=8, fig.width=11, unit='in'}
+plot_pwr_fp(df = results, fg = "MLL")
+```
+
+
+```{r ,fig.height=6, fig.width=10, unit='in',include = FALSE}
+### Power with False Positive Interactive {.tabset}
+plot_pwr_fp_inter(df = results, fg = "MLL")
+```
+
+
+
+```{r, include=FALSE}
+### Comparing Methods in MLL
+mll = results[results$Fusion_Group == "MLL",] %>%
+  group_by(Test) %>%
+  summarise(avg_power = mean(power), avg_fp = mean(FPR))
+
+mll$rank_power = rank(-mll$avg_power, ties.method = "min")
+mll$rank_fp = rank(mll$avg_fp)
+
+mll <- mll[order(-mll$avg_power, mll$avg_fp), ]
+mll
+```
+
+
+## Fusion Group = NSD1{.tabset}
+### Power {.tabset}
+```{r ,fig.height=8, fig.width=10, unit='in'}
+plot_pwr(dist="norm",p = results$Prop, fg = "NSD1", results)
+```
+
+### False Positive {.tabset}
+```{r ,fig.height=8, fig.width=10, unit='in'}
+plot_fp(dist="norm",p = results$Prop, fg = "NSD1", results)
+```
+
+### Power with False Positive {.tabset}
+```{r ,fig.height=8, fig.width=11, unit='in'}
+plot_pwr_fp(df = results, fg = "NSD1")
+```
+
+```{r ,fig.height=6, fig.width=10, unit='in', include = FALSE}
+### Power with False Positive Interactive {.tabset}
+plot_pwr_fp_inter(df = results, fg = "NSD1")
+```
+
+
+```{r, include=FALSE}
+### Comparing Methods in NSD1
+nsd1 = results[results$Fusion_Group == "NSD1",] %>%
+  group_by(Test) %>%
+  summarise(avg_power = mean(power), avg_fp = mean(FPR))
+
+nsd1$rank_power = rank(-nsd1$avg_power, ties.method = "min")
+nsd1$rank_fp = rank(nsd1$avg_fp)
+
+nsd1 <- nsd1[order(-nsd1$avg_power, nsd1$avg_fp), ]
+nsd1
+
+```
