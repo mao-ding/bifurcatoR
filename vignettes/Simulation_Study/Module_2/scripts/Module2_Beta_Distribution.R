@@ -46,6 +46,8 @@ start.time <- Sys.time()
 
 results = process_sims_b(as.integer(args[1]))
 
+end.time <- Sys.time()
+
 time.taken <- end.time - start.time
 time.taken
 
