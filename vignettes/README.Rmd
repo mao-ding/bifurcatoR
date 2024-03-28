@@ -1,0 +1,92 @@
+---
+title: "bifurcatoR"
+author: "Mao Ding"
+date: "2024-03-01"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE,message = FALSE,error = FALSE)
+```
+
+```{r,include = TRUE}
+setwd("/work/larylab/Mao_Ding/bifurcatoR/vignettes")
+```
+
+```{r, include = FALSE}
+suppressPackageStartupMessages({
+  library(bifurcatoR)
+  library(doParallel)
+  library(dplyr)
+  library(ggplot2)
+  library(plotly)
+  library(ggpubr)
+  library(data.table)
+  library(parallel)
+  library(mclust)
+  library(gtsummary)
+  library(tidyverse)
+  library(gt)
+  library(mixR)
+  library(inserttable)
+})
+```
+
+## Simulation Study
+The objective of the simulation study is to simulate a diverse array of scenarios, generating data using various distributions, means, standard deviations, and mixing proportions etc. Subsequently, the power and false positive rates of different methods in bifucatoR are compared. 
+
+Module 1 concentrates on identifying unstructured mean or variance heterogeneity through seven methods. 
+
+Meanwhile, Module 2 is dedicated to implementing techniques for detecting structured mean or variance heterogeneity, or data bimodality.The methods implemented include mClust, Bimodality Coefficient, Ameijeiras-Alonso et al.,. Excess Mass Fit, Cheng and Hall Excess Mass, Fisher and Marron Carmer-von Mises, Hall and York Bandwidth test, Hartigans’ dip test, Sliverman Bandwidth and mixR.
+
+All scripts are executed utilizing the Northeastern University high-performance computing resource Discovery.
+
+### Module 1
+To generate the power and false positive results of the simulation study, execute [Module1.R]("https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_1/scripts/Module1.R") The study includes 7 tests: "Levene," "Permutations (Gini)," "Permutations (MAD)," "Permutations (SD)," "ANOVA," "Non-parametric ANOVA," and "Permutations (Raw)."
+
+The table below summarizes the scripts and the associated information.
+![Module_1](images/Screenshot 2024-03-06 at 2.47.00 PM.png){width=70% height=70%}
+
+Note that the running time differs for each method; some may take several hours to complete. To expedite execution, we've arranged for multiple NEU Discovery R sessions, with each test running in its own session. 
+For instance, in Module1.R, we replace the 63rd line of code, which currently executes 7 methods, with a specific method such as "Levene" using the following code:
+
+```{r, include = TRUE}
+print(paste0("tests", "= c('Levene')"))
+```
+
+In this setup, all tests will be able to execute in parallel, leveraging the multiple NEU Discovery R sessions concurrently. This parallel execution significantly speeds up the overall process, ensuring efficient utilization of computing resources and reducing the total time required for the simulation study. 
+
+After the completion of Module_1 execution, it produced multiple raw results .rds files, which are stored within the same directory. To consolidate these files with identical structure in the same folder, we employ [merge_results.R]("https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_1/scripts/merge_results.R"). Simply adjust the working directory and the folder for result storage as required. This process yields [module1_n_w_7_tests_sim(1000).rds](https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_1/results/module1_n_w_7_tests_sim(1000).rds) and [module1_n_w_7_tests_sim(1000).csv]()
+
+### Module 2
+Unlike Module 1, Module 2 is considerably more computationally intensive and may require longer time to complete all tests for all scenarios. To address this, we introduce Slurm (Simple Linux Utility for Resource Management), a widely utilized tool in High-Performance Computing environments. Slurm is tailored to handle the intricate demands of extensive computational workloads. It excels in distributing and overseeing tasks across clusters consisting of thousands of nodes, providing efficient control over resources, scheduling, and job queuing. 
+More information can be found in [Slurm]("https://rc-docs.northeastern.edu/en/latest/slurmguide/index.html")
+
+The table below summarizes the scripts and the associated information. All the scripts can be found in [Module_2](https://github.com/mao-ding/bifurcatoR/tree/main/vignettes/Simulation_Study/Module_2/scripts) Please note that the minimum sample size required for running mixR is 30. Therefore, we exclude sample sizes of 25 from the mixR parameters. Additionally, ensure that you have installed the mixR package from CRAN.
+![Module_2](images/Screenshot 2024-03-06 at 2.46.46 PM.png){width=70% height=70%}
+
+For instance, to execute 8 methods from Module 2 for both Normal and Weibull distributions, you can submit Slurm array jobs employing the scripts [Module2_Norm_Weib_Distribution.R]("https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_2/scripts/Module2_Norm_Weib_Distribution.R") and [Module2_Norm_Weib_Distribution.sh]("https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_2/scripts/Module2_LNorm_Distribution_mixR.sh"). The Slurm script facilitates running multiple analogous job concurrently, such as performing the same analysis with various inputs or parameters, eliminating the need to submit each job individually. Ensure that keep each R script and .sh script in the same directory. 
+
+You can also define the number of jobs within the .sh script. For instance, if the params_grid function in the R script suggests 270 similar scenarios, you can set the number of array jobs using: #SBATCH --array=1-270. 
+
+Additionally, you can customize parameters such as the partition, memory, number of nodes, and others according to your requirements. Further details on Slurm Array Jobs are available in the [Slurm Array Jobs documentation]("https://rc-docs.northeastern.edu/en/latest/slurmguide/slurmarray.html#slurm-arrays"). 
+
+After the execution of Module_2 is complete, the same [merge_results.R]("https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_1/scripts/merge_results.R") script is utilized to combine the raw .rds files. Ensure to adjust the saving directory according to where you want the file to be stored.
+
+Specifically, for normal, Weibull, and lognormal distributions, merge the raw results from [Module2_Norm_Weib_Distribution.R], [Module2_Norm_Weib_Distribution_mixR.R], and [Module2_LNorm_Distribution_mixR.R] to generate [module2_n_w_9_tests_sim(1000).rds] (https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_2/results/module2_n_w_9_tests_sim(1000).rds) and [module2_n_w_9_tests_sim(1000).csv]()
+
+For the beta distribution, merge the raw results generated from [Module2_Beta_Distribution.R] to produce [module2_b_all_tests_sim(1000).rds](https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_2/results/module2_b_all_tests_sim(1000).rds) and [module2_b_all_tests_sim(1000).csv]()
+
+We created an overall combined results .xlsx file [Module_1_2_Results.xlsx]() using the three .csv file above through Microsoft Excel.
+
+## dxsmall Data Analysis
+1. Execute [Table_1_A_dxsmall.R]() to generate the table displaying the characteristics of the TARGET pAML and UK Twins cohorts, labeled as [Table 1. TARGET pAML and UK Twins cohort characteristics]().
+
+2. Utilize [Figure_4_A_B_C_D.R]() to produce the following figures: [fig_4_A.png](), [fig_4_B.png](), [fig_4_C.png](), [fig_4_D.png]().
+
+3. Execute [dxsmall_simulation.R]() and [dxsmall_simulation.sh]() to generate multiple .rds files, containing down-sampling simulation results based on the parameters from the Mclust fit model. Ensure these files are saved in the same directory. Afterwards, utilize [merge_results.R]() to aggregate all files and generate [module2_dxsmall_norm_all_tests.rds]().
+
+4. 
