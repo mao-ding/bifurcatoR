@@ -87,6 +87,5 @@ We created an overall combined results .xlsx file [Module_1_2_Results.xlsx]() us
 
 2. Utilize [Figure_4_A_B_C_D.R]() to produce the following figures: [fig_4_A.png](), [fig_4_B.png](), [fig_4_C.png](), [fig_4_D.png]().
 
-3. Execute [dxsmall_simulation.R]() and [dxsmall_simulation.sh]() to generate multiple .rds files, containing down-sampling simulation results based on the parameters from the Mclust fit model. Ensure these files are saved in the same directory. Afterwards, utilize [merge_results.R]() to aggregate all files and generate [module2_dxsmall_norm_all_tests.rds]().
+3. Execute [dxsmall_simulation.R](https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/dxsmall/scripts/dxsmall_simulation.R) and [dxsmall_simulation.sh](https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/dxsmall/scripts/dxsmall_simulation.sh) to generate multiple .rds files, containing down-sampling simulation results based on the parameters from the Mclust fit model. Ensure these files are saved in the same directory. Afterwards, utilize [merge_results.R](https://github.com/mao-ding/bifurcatoR/blob/main/vignettes/Simulation_Study/Module_1/scripts/merge_results.R) to aggregate all files and generate [module2_dxsmall_norm_all_tests.rds]().
 
-4. 
