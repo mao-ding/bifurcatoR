@@ -40,3 +40,6 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# dxsmall raw result
+/work/larylab/Mao_Ding/bifurcatoR/vignettes/dxsmall/results/raw_results/*
